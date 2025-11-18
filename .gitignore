@@ -1,0 +1,46 @@
+# === IBM Integration Toolkit ESB ===
+*/bar/
+*/bin/
+*/build/
+*/dev/
+*/gen/
+*/lib/
+*.bak
+*_TMP.*
+*_log.*
+*.tmp
+*.lck
+*.sigcache
+*.bar
+*.compiledflow
+*.cmppkg
+*.JavaCompute
+*.xsl
+*.xsd
+*.class
+*.log
+
+# === archivos de configuración y conexiones locales ===
+*.yaml
+*.properties
+
+# === Java y empaquetados ===
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# === Otros temporales y logs ===
+hs_err_pid*
+replay_pid*
+
+# === BlueJ, J2ME, otros ===
+*.ctxt
+.mtj.tmp/
+
+# === ⚠️ IMPORTANTE: No ignorar GitHub workflows ===
+!.github/
+!.github/workflows/

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+	<name>ConsultaEstadoRadicacionDocumentos</name>
+	<comment></comment>
+	<projects>
+		<project>CacheHomologacionTipos_StaticLib</project>
+		<project>ConsultaCupoCarteraPaqueteCaller</project>
+		<project>IntegracionACCaller</project>
+		<project>GeneradorSecuenciaESBCaller</project>
+		<project>IntegracionFCCaller</project>
+		<project>IntegracionWSCaller</project>
+		<project>Util</project>
+		<project>MessageSet_017_StaticLib</project>
+	</projects>
+</projectDescription>
