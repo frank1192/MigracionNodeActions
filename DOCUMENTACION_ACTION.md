@@ -59,4 +59,45 @@ Estructura final esperada en el release del action:
 - `action.yaml`
 - `package.json`
 
+---
+
+Notas sobre el token `org-repo-token` (privado / opcional)
+
+- **Privacidad:** El `org-repo-token` es un secreto sensible utilizado para descargar propiedades remotas desde el repositorio de configuración central. No incluyas el token en el código ni en los workflows públicos.
+- **Opcionalidad:** La acción está diseñada para **omitir** la validación de grupos de ejecución cuando no se proporciona el token o cuando el token no tiene permisos para acceder al repositorio de configuración. Esto permite usar la acción en contextos donde no se dispone del token (por ejemplo cuentas personales o repositorios externos).
+- **Cómo suministrarlo de forma segura:** en el repositorio que consume la acción, guarda el token en `Settings → Secrets` (a nivel de repo u organización) con un nombre como `ORG_REPO_TOKEN` o `ESB_ACE12_ORG_REPO_TOKEN`. Luego pásalo al action usando `with` o `env` según tu `action.yaml`.
+
+Ejemplo de uso seguro (sin exponer el token):
+
+```yaml
+jobs:
+  run-checklist-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Ejecutar checklist
+        uses: frank1192/MigracionNodeActions@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          org-repo-token: ${{ secrets.ORG_REPO_TOKEN }} # opcional
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Ejemplo de uso sin token (la validación de grupos se omitirá):
+
+```yaml
+jobs:
+  run-checklist-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Ejecutar checklist (sin token de org)
+        uses: frank1192/MigracionNodeActions@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Si tu equipo de arquitectura va a proporcionar un token de uso centralizado, pásalo como `secrets` en los repositorios consumidores o configúralo como secret a nivel de organización para limitar su exposición.
+
 Si quieres, puedo crear un workflow de CI que ejecute el build con Node 24.11 en la acción de CI (por ejemplo usando `actions/setup-node@v4` si el runner lo soporta), y que haga `ncc build` automáticamente en cada push o al crear una release.

@@ -1,0 +1,20 @@
+name: 'Validar Checklist ACE12'
+description: 'Validación completa del checklist ACE12 para README y estructura de PR'
+inputs:
+  path-readme:
+    description: 'Ruta al README.md'
+    required: false
+    default: README.md
+  github-event-path:
+    description: 'Ruta al archivo github event (para datos del PR)'
+    required: false
+    default: ${{ github.event_path }}
+  github-token:
+    description: 'GitHub Token para API'
+    required: true
+  org-repo-token:
+    description: 'Token para descargar propiedades remotas (opcional; si no está disponible la validación de grupos se omite)'
+    required: false
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

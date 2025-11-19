@@ -1,19 +1,34 @@
-const core = require('@actions/core');
-const github = require('@actions/github');
-const fs = require('fs');
-const path = require('path');
+import core from '@actions/core';
+import * as github from '@actions/github';
+import fs from 'fs';
+import path from 'path';
 
 async function run() {
 	try {
-		const context = github.context;
-		const eventName = context.eventName;
-		core.info(`Evento: ${eventName}`);
+		const inputReadme = core.getInput('path-readme') || process.env.INPUT_PATH_README || 'README.md';
+		const inputEventPath = core.getInput('github-event-path') || process.env.GITHUB_EVENT_PATH || process.env.INPUT_GITHUB_EVENT_PATH;
+		const githubToken = core.getInput('github-token') || process.env.INPUT_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+		const orgToken = core.getInput('org-repo-token') || process.env.INPUT_ORG_REPO_TOKEN;
 
-		// Sólo soportamos pull_request events para validar
-		const pr = context.payload.pull_request;
-		const headRef = pr ? pr.head.ref : process.env.GITHUB_HEAD_REF;
-		const baseRef = pr ? pr.base.ref : process.env.GITHUB_BASE_REF;
-		const prNumber = pr ? pr.number : process.env.PR_NUMBER;
+		core.info(`Inputs: path-readme=${inputReadme}, event-path=${inputEventPath ? '<provided>' : '<none>'}`);
+
+		// Determinar payload PR: primero por archivo de evento si se proporcionó
+		let eventPayload = null;
+		if (inputEventPath && fs.existsSync(inputEventPath)) {
+			try {
+				const raw = fs.readFileSync(inputEventPath, 'utf8');
+				eventPayload = JSON.parse(raw);
+				core.info('Cargado payload desde github-event-path');
+			} catch (e) {
+				core.warning('No se pudo parsear github-event-path: ' + e.message);
+			}
+		}
+
+		const context = github.context;
+		const payload = eventPayload || context.payload || {};
+		const pr = payload.pull_request || null;
+		const headRef = pr ? pr.head.ref : (process.env.GITHUB_HEAD_REF || null);
+		const baseRef = pr ? pr.base.ref : (process.env.GITHUB_BASE_REF || null);
 
 		let failed = false;
 
@@ -32,20 +47,18 @@ async function run() {
 		}
 
 		// 2) Validar README.md (si existe) — si no existe es advertencia
-		const readmePath = path.join(process.cwd(), 'README.md');
+		const readmePath = path.join(process.cwd(), inputReadme || 'README.md');
 		if (!fs.existsSync(readmePath)) {
 			core.warning('No se encontró README.md — advertencia: README ya no es obligatorio.');
 		} else {
 			core.info('README.md encontrado — validando plantilla mínima...');
 			const content = fs.readFileSync(readmePath, 'utf8');
-			// Validación mínima: título que comience con '# ESB_'
 			if (!/^# ESB_/m.test(content)) {
 				core.error("README.md: falta título principal que comience con '# ESB_'");
 				failed = true;
 			} else {
 				core.notice('README.md: título principal OK');
 			}
-			// Validar secciones mínimas
 			['## INFORMACIÓN DEL SERVICIO', '## Procedimiento de despliegue', '## DOCUMENTACION', '## SQL'].forEach(h => {
 				const re = new RegExp('^' + h.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'm');
 				if (!re.test(content)) {
@@ -59,8 +72,10 @@ async function run() {
 
 		// 3) Validar que no existan carpetas BD
 		const walkSync = (dir, filelist = []) => {
-			fs.readdirSync(dir).forEach(file => {
+			for (const file of fs.readdirSync(dir)) {
 				const filepath = path.join(dir, file);
+				// ignorar la carpeta .git y node_modules
+				if (filepath.includes(`${path.sep}.git${path.sep}`) || filepath.endsWith(`${path.sep}.git`) || filepath.includes(`${path.sep}node_modules${path.sep}`)) continue;
 				try {
 					const stat = fs.statSync(filepath);
 					if (stat.isDirectory()) {
@@ -70,7 +85,7 @@ async function run() {
 				} catch (e) {
 					// ignore
 				}
-			});
+			}
 			return filelist;
 		};
 
@@ -84,12 +99,10 @@ async function run() {
 		}
 
 		// 4) Validar grupos de ejecución si existe token de org
-		const orgToken = process.env.ESB_ACE12_ORG_REPO_TOKEN || process.env.INPUT_ESB_ACE12_ORG_REPO_TOKEN;
 		if (orgToken && fs.existsSync(readmePath)) {
 			core.info('Intentando validar grupos de ejecución usando token org...');
 			try {
 				const octokit = github.getOctokit(orgToken);
-				// Repo hardcoded en la validación original
 				const owner = 'bocc-principal';
 				const repo = 'ESB_ACE12_General_Configs';
 				const filePath = 'ace-12-common-properties/esb-ace12-general-integration-servers.properties';
@@ -101,7 +114,6 @@ async function run() {
 				}
 
 				const readme = fs.readFileSync(readmePath, 'utf8');
-				// Extraer grupos desde Procedimiento de despliegue
 				const despliegueMatch = /desplegar en los grupos de ejecuci[oó]n:\s*(.*)/i.exec(readme);
 				let gruposReadme = '';
 				if (despliegueMatch) gruposReadme = despliegueMatch[1].trim().toLowerCase();
@@ -109,7 +121,6 @@ async function run() {
 					core.error('No se pudieron extraer grupos de ejecución desde README');
 					failed = true;
 				} else {
-					// Buscar en properties
 					const servicioMatch = /#\s*ESB_.*$/m.exec(readme);
 					let servicio = '';
 					if (servicioMatch) {
@@ -128,7 +139,6 @@ async function run() {
 							core.error('No existe entry .Transactional ni .Notification para el servicio en propiedades');
 							failed = true;
 						} else {
-							// comparar sin importar orden
 							const arrRead = gruposReadme.split(/[ ,]+/).filter(Boolean).map(s=>s.trim());
 							const arrProps = propsGroups.split(/[ ,]+/).filter(Boolean).map(s=>s.trim());
 							const missingInProps = arrRead.filter(r => !arrProps.includes(r));
@@ -163,17 +173,17 @@ async function run() {
 					failed = true;
 				}
 			}
-			// excepción: feature/** -> develop y comentario especial
 			if (baseRef === 'develop' && /^feature\//.test(headRef)) {
 				try {
-					const token = process.env.GITHUB_TOKEN;
-					if (token) {
-						const octokit = github.getOctokit(token);
-						const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
-						const comments = await octokit.issues.listComments({ owner, repo, issue_number: pr.number });
-						const bodies = comments.data.map(c=>c.body || '').join('\n');
-						if (/@bot aprobar excepción/.test(bodies)) {
-							core.notice('Se encontró comentario de excepción — permitiendo excepción.');
+					if (githubToken) {
+						const octokit = github.getOctokit(githubToken);
+						const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
+						if (owner && repo) {
+							const comments = await octokit.issues.listComments({ owner, repo, issue_number: pr.number });
+							const bodies = comments.data.map(c=>c.body || '').join('\n');
+							if (/@bot aprobar excepción/.test(bodies)) {
+								core.notice('Se encontró comentario de excepción — permitiendo excepción.');
+							}
 						}
 					}
 				} catch (e) {
