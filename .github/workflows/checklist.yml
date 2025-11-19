@@ -1,4 +1,4 @@
-name: checklist
+name: checklist-example
 
 on:
   pull_request:
@@ -11,204 +11,20 @@ on:
       - opened
       - synchronize
       - reopened
-      - edited
-
-# Prioridad: alta (entrada para operadores/lectores y para futuros runners)
-env:
-  PRIORITY: high
 
 jobs:
-  validacion_readme_y_grupos:
-    name: Validación README y Grupos de Ejecución
-    runs-on: ubuntu-latest
-    env:
-      ESB_ACE12_ORG_REPO_TOKEN: ${{ secrets.ESB_ACE12_ORG_REPO_TOKEN }}
-    steps:
-      - name: Descargar código
-        uses: actions/checkout@v3
-
-      - name: Validar existencia y plantilla de README.md
-        run: |
-          if [ ! -f README.md ]; then
-            echo "::warning title=Validación de README.md::No se encontró el archivo README.md. Nota: el README ya no es obligatorio para repositorios.")
-            exit 0
-          fi
-
-          failed=0
-          echo "🔍 Iniciando validación de estructura del README.md"
-
-          # Validar título
-          if grep -Pq '^# ESB_' README.md; then
-            titulo=$(grep -m1 '^# ESB_' README.md | sed 's/^# //' | sed 's/\.$//' )
-            if echo "$titulo" | grep -Pq '^ESB_[A-Za-z0-9_-]+'; then
-              contenido_despues=$(echo "$titulo" | sed 's/^ESB_//')
-              if [ -z "$contenido_despues" ] || echo "$contenido_despues" | grep -Pq '^[_-]+$'; then
-                echo "::error title=Validación de README.md::El título no puede ser solo 'ESB_' o similar; agregue nombre descriptivo."
-                failed=1
-              else
-                echo "::notice title=Validación de README.md::Título principal válido: $titulo"
-              fi
-            else
-              echo "::error title=Validación de README.md::El título debe comenzar con 'ESB_' seguido de un nombre descriptivo"
-              failed=1
-            fi
-          else
-            echo "::error title=Validación de README.md::Falta el título principal '# ESB_...'"
-            failed=1
-          fi
-
-          # Validar secciones mínimas (INFORMACIÓN DEL SERVICIO y Procedimiento de despliegue)
-          for h in "## INFORMACIÓN DEL SERVICIO" "## Procedimiento de despliegue" "## DOCUMENTACION" "## SQL"; do
-            if ! grep -Pq "^${h}" README.md; then
-              echo "::error title=Validación de README.md::Falta sección '${h}'"
-              failed=1
-            else
-              echo "::notice title=Validación de README.md::Sección '${h}' encontrada"
-            fi
-          done
-
-          if [ $failed -eq 1 ]; then
-            echo "::error title=Validación de README.md::README.md no cumple con los requisitos mínimos."
-            exit 1
-          fi
-
-          echo "::notice title=Validación de README.md::README.md cumple validaciones básicas. Para validaciones exhaustivas use el job de plantilla completo (si aplica)."
-
-      - name: Descargar archivo .properties y validar grupos de ejecución
-        run: |
-          curl -H "Authorization: Bearer $ESB_ACE12_ORG_REPO_TOKEN" \
-               -H "Accept: application/vnd.github.v3.raw" \
-               -o esb-ace12-general-integration-servers.properties \
-               "https://api.github.com/repos/bocc-principal/ESB_ACE12_General_Configs/contents/ace-12-common-properties/esb-ace12-general-integration-servers.properties?ref=main"
-
-          if [ ! -f esb-ace12-general-integration-servers.properties ]; then
-            echo "::error title=Validación de grupos de ejecución::No se pudo descargar el archivo .properties"
-            exit 1
-          fi
-
-          servicio_readme=$(grep -m1 '^# ESB_' README.md | sed 's/^# //' | sed 's/\.$//' | xargs || true)
-          if [ -z "$servicio_readme" ]; then
-            echo "::error title=Validación de grupos de ejecución::No se pudo extraer nombre de servicio desde README"
-            exit 1
-          fi
-          servicio=$(echo "$servicio_readme" | sed 's/^ESB_ACE12_//')
-
-          grupos_readme=$(awk '/^## Procedimiento de despliegue/{flag=1;next}/^## /{flag=0}flag' README.md | awk '/desplegar en los grupos de ejecución:/ {getline; print}' | xargs | tr ',' ' ' | tr '[:upper:]' '[:lower:]' || true)
-
-          if [ -z "$grupos_readme" ]; then
-            grupos_readme=$(awk '/^## Procedimiento de despliegue/{flag=1;next}/^## /{flag=0}flag' README.md | grep -i "desplegar en los grupos de ejecución:" | sed -n 's/.*desplegar en los grupos de ejecución:\(.*\)/\1/p' | xargs | tr ',' ' ' | tr '[:upper:]' '[:lower:]' || true)
-          fi
-
-          if [ -z "$grupos_readme" ]; then
-            echo "::error title=Validación de grupos de ejecución::No se encontraron grupos en README para comparar"
-            exit 1
-          fi
-
-          grupos_properties=$(grep -i "^ESB_ACE12_${servicio}\.Transactional=" esb-ace12-general-integration-servers.properties | cut -d'=' -f2 | tr ',' ' ' | xargs | tr '[:upper:]' '[:lower:]' || true)
-          grupos_properties_notif=$(grep -i "^ESB_ACE12_${servicio}\.Notification=" esb-ace12-general-integration-servers.properties | cut -d'=' -f2 | tr ',' ' ' | xargs | tr '[:upper:]' '[:lower:]' || true)
-          grupos_properties_total="$grupos_properties $grupos_properties_notif"
-
-          if [ -z "$grupos_properties_total" ]; then
-            echo "::error title=Validación de grupos de ejecución::No existe entry ESB_ACE12_${servicio}.Transactional ni .Notification en el archivo general config."
-            exit 1
-          fi
-
-          # Comparar listas (ignorando orden)
-          IFS=' ' read -r -a arr_readme <<< "$grupos_readme"
-          IFS=' ' read -r -a arr_props <<< "$grupos_properties_total"
-
-          missing=0
-          for r in "${arr_readme[@]}"; do
-            found=0
-            for p in "${arr_props[@]}"; do
-              if [ "$r" = "$p" ]; then found=1; break; fi
-            done
-            if [ $found -eq 0 ]; then
-              echo "::error title=Validación de grupos de ejecución::Grupo '$r' presente en README pero no en config"
-              missing=1
-            fi
-          done
-
-          for p in "${arr_props[@]}"; do
-            found=0
-            for r in "${arr_readme[@]}"; do
-              if [ "$r" = "$p" ]; then found=1; break; fi
-            done
-            if [ $found -eq 0 ]; then
-              echo "::error title=Validación de grupos de ejecución::Grupo '$p' presente en config pero no en README"
-              missing=1
-            fi
-          done
-
-          if [ $missing -eq 1 ]; then exit 1; else echo "::notice title=Validación de grupos::OK"; fi
-
-  revisiones_repositorio:
-    name: Revisiones Repositorio (rutas, revisores, carpetas BD)
+  call_checklist_action:
+    name: Ejecutar Action de Checklist (ejemplo)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Validar nombre de la rama
-        run: |
-          echo "Nombre de la rama: ${{ github.head_ref }}"
-          if [[ ! "${{ github.head_ref }}" =~ ^(feature|bugfix|hotfix|release)\/[A-Za-z0-9._-]+$ ]]; then
-            echo "::error title=Validación de nombre de rama::Nombre de rama inválido. Debe comenzar con 'feature/', 'bugfix/', 'hotfix/' o 'release/'."
-            exit 1
-          else
-            echo "::notice title=Validación de nombre de rama::Nombre de rama válido."
-          fi
-
-      - name: Verificar carpetas BD
-        run: |
-          echo "🔍 Buscando carpetas BD en el repositorio"
-          bd_folders=$(find . -type d -iname "BD" ! -path "./.git/*" || true)
-          if [ -n "$bd_folders" ]; then
-            echo "::error title=Validación de carpetas BD::Se encontraron carpetas 'BD' en el repositorio. Carpetas encontradas:"
-            echo "$bd_folders"
-            exit 1
-          else
-            echo "::notice title=Validación de carpetas BD::No se encontraron carpetas BD."
-          fi
-
-      - name: Validar rutas y revisores
+      - name: Ejecutar checklist action (ejemplo de consumo desde otro repo)
+        uses: frank1192/MigracionNodeActions@main
+        with:
+          # Token opcional para validar grupos de ejecución desde config central
+          esb_ace12_org_repo_token: ${{ secrets.ESB_ACE12_ORG_REPO_TOKEN }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y gh
-
-          hasError=0
-          sourceBranch="${{ github.head_ref }}"
-          targetBranch="${{ github.base_ref }}"
-          pr_number="${{ github.event.pull_request.number }}"
-          reviewers="${{ github.event.pull_request.requested_reviewers[*].login }}"
-          validReviewers=(DRamirezM cdgomez acardenasm CAARIZA)
-
-          if [[ "$targetBranch" == "quality" && "$sourceBranch" == "develop" ]]; then
-            match=0
-            for reviewer in "${validReviewers[@]}"; do
-              if [[ "$reviewers" == *"$reviewer"* ]]; then match=1; break; fi
-            done
-            [[ $match -eq 0 ]] && { echo "::error title=Validación de revisores::Falta revisor válido para quality"; hasError=1; }
-          fi
-
-          if [[ "$targetBranch" == "main" && "$sourceBranch" == "quality" ]]; then
-            match=0
-            for reviewer in "${validReviewers[@]}"; do
-              if [[ "$reviewers" == *"$reviewer"* ]]; then match=1; break; fi
-            done
-            [[ $match -eq 0 ]] && { echo "::error title=Validación de revisores::Falta revisor válido para main"; hasError=1; }
-          fi
-
-          # Excepción manual para feature/** → develop
-          if [[ "$targetBranch" == "develop" && "$sourceBranch" == feature/* ]]; then
-            gh pr view "$pr_number" --repo "${{ github.repository }}" --json comments -q '.comments[].body' > comentarios.txt || true
-            if grep -q "@bot aprobar excepción" comentarios.txt; then
-              echo "::notice title=Excepción manual::Se encontró comentario de excepción."
-              hasError=0
-            fi
-          fi
-
-          [[ $hasError -eq 1 ]] && exit 1 || echo "::notice title=Validación de revisores::OK"
-                  fi
+          # GITHUB_TOKEN suele quedar disponible para la acción
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
