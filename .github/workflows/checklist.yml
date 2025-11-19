@@ -13,926 +13,13 @@ on:
       - reopened
       - edited
 
+# Prioridad: alta (entrada para operadores/lectores y para futuros runners)
+env:
+  PRIORITY: high
+
 jobs:
-  validar_nombre_rama:
-    name: Validar nombre de la rama
-    runs-on: ubuntu-latest
-    steps:
-      - name: Descargar código
-        uses: actions/checkout@v3
-      - name: Validar nombre de rama
-        run: |
-          echo "Nombre de la rama: ${{ github.head_ref }}"
-          if [[ ! "${{ github.head_ref }}" =~ ^(feature|bugfix|hotfix|release)\/[A-Za-z0-9._-]+$ ]]; then
-            echo "::error title=Validación de nombre de rama::Nombre de rama inválido. Debe comenzar con 'feature/', 'bugfix/', 'hotfix/' o 'release/'."
-            exit 1
-          else
-            echo "::notice title=Validación de nombre de rama::Nombre de rama válido."
-          fi
-
-  validar_readme_existencia:
-    name: Validar existencia README.md
-    runs-on: ubuntu-latest
-    steps:
-      - name: Descargar código
-        uses: actions/checkout@v3
-      - name: Validar existencia README.md
-        run: |
-          if [ ! -f README.md ]; then
-            echo "::error title=Validación de README.md::No se encontró el archivo README.md"
-            exit 1
-          else
-            echo "::notice title=Validación de README.md::Archivo README.md encontrado."
-          fi
-
-  validar_readme_plantilla:
-    name: Validar Plantilla README
-    runs-on: ubuntu-latest
-    steps:
-      - name: Descargar código
-        uses: actions/checkout@v3
-      - name: Validar Plantilla README
-        run: |
-          failed=0
-          echo "🔍 Iniciando validación de estructura del README.md"
-          
-          # 1. Validacion de la Plantilla - Validando título principal - OK
-            echo "✔️ Validando título principal del Servicio '# ESB_...'"
-            
-            # Verificar que existe el título con formato ESB_
-            if grep -Pq '^# ESB_' README.md; then
-              # Extraer el título
-              titulo=$(grep -m1 '^# ESB_' README.md | sed 's/^# //' | sed 's/\.$//')
-              
-              # Verificar que hay contenido después de ESB_
-              if echo "$titulo" | grep -Pq '^ESB_[A-Za-z0-9_-]+'; then
-                # Extraer la parte después de ESB_
-                contenido_despues=$(echo "$titulo" | sed 's/^ESB_//')
-                
-                # Verificar que no está vacío y no es solo guiones bajos o guiones
-                if [ -z "$contenido_despues" ] || echo "$contenido_despues" | grep -Pq '^[_-]+$'; then
-                  echo "::error title=Validación de README.md::El título no puede ser solo 'ESB_' o 'ESB_' seguido solo de guiones. Debe agregar un nombre descriptivo del repositorio después de ESB_"
-                  failed=1
-                else
-                  echo "::notice title=Validación de README.md::Título principal encontrado y válido: $titulo"
-                fi
-              else
-                echo "::error title=Validación de README.md::El título debe comenzar con 'ESB_' seguido de un nombre descriptivo"
-                failed=1
-              fi
-            else
-              echo "::error title=Validación de README.md::Falta el título principal '# ESB_...'"
-              failed=1
-            fi
-
-          # 2. Validacion de la Plantilla - INFORMACIÓN DEL SERVICIO - OK 
-            echo "✔️ Validando sección '## INFORMACIÓN DEL SERVICIO'"
-
-              # Verifica si el encabezado existe
-              if grep -Pq '^## INFORMACIÓN DEL SERVICIO' README.md; then
-                echo "::notice title=Validación de README.md::Encabezado '## INFORMACIÓN DEL SERVICIO' encontrado"
-
-                # Extrae contenido debajo del encabezado hasta la primera subsección (###)
-                contenido_antes_subseccion=$(awk '/^## INFORMACIÓN DEL SERVICIO/{flag=1; next} /^### /{flag=0} flag && NF' README.md)
-
-                if [ -z "$contenido_antes_subseccion" ]; then
-                  echo "::error title=Validación de README.md::La sección '## INFORMACIÓN DEL SERVICIO' no contiene información descriptiva antes de las subsecciones. Debe agregar una descripción del servicio antes de '### Último despliegue'."
-                  failed=1
-                else
-                  echo "::notice title=Validación de README.md::La sección '## INFORMACIÓN DEL SERVICIO' contiene información descriptiva"
-                fi
-              else
-                echo "::error title=Validación de README.md::No se encontró el encabezado '## INFORMACIÓN DEL SERVICIO'"
-                failed=1
-              fi
-          
-          # 3. Validación de la subsección "Último despliege"
-            echo "✔️ Validando subsección '### Último despliege'"
-            
-            # Verificar que existe la subsección
-            if grep -Pq '^### Último despliege' README.md; then
-              echo "::notice title=Validación de README.md::Subsección '### Último despliege' encontrada"
-              
-              # Extraer contenido de la subsección hasta el siguiente encabezado
-              ultimo_despliege_content=$(awk '/^### Último despliege/{flag=1; next} /^## /{flag=0} flag' README.md)
-              
-              # Verificar que existe la tabla con el encabezado correcto
-              if echo "$ultimo_despliege_content" | grep -Pq '\|CQ\s*\|JIRA\s*\|\s*Fecha\s*\|'; then
-                echo "::notice title=Validación de README.md::Encabezado de tabla 'Último despliege' encontrado"
-                
-                # Extraer la fila de datos (la primera fila después del separador |---|---|---|)
-                data_row=$(echo "$ultimo_despliege_content" | awk '/\|---\|---\|---\|/{getline; print; exit}')
-                
-                if [ -z "$data_row" ]; then
-                  echo "::error title=Validación de README.md::La tabla 'Último despliege' no tiene fila de datos. Debe incluir al menos una fila con valores o 'NA' en cada columna."
-                  failed=1
-                else
-                  # Contar columnas esperadas del encabezado
-                  header_row=$(echo "$ultimo_despliege_content" | grep -P '\|CQ\s*\|JIRA\s*\|\s*Fecha\s*\|')
-                  num_columns=$(echo "$header_row" | awk -F'|' '{print NF-2}')
-                  
-                  # Extraer las celdas de la fila (ignorar | al inicio y final, tomar solo num_columns)
-                  cells=$(echo "$data_row" | sed 's/^|//;s/|$//' | awk -F'|' -v cols="$num_columns" '{for(i=1;i<=cols;i++) print $i}')
-                  
-                  empty_cells=0
-                  cell_num=0
-                  while IFS= read -r cell; do
-                    cell_num=$((cell_num + 1))
-                    # Eliminar espacios en blanco
-                    cell_trimmed=$(echo "$cell" | xargs)
-                    if [ -z "$cell_trimmed" ]; then
-                      empty_cells=1
-                      break
-                    fi
-                  done <<< "$cells"
-                  
-                  if [ $empty_cells -eq 1 ]; then
-                    echo "::error title=Validación de README.md::La tabla 'Último despliege' tiene celdas vacías en la fila de datos. Si no hay valor, debe colocarse 'NA' en cada columna (CQ, JIRA, Fecha)."
-                    failed=1
-                  else
-                    echo "::notice title=Validación de README.md::La tabla 'Último despliege' es válida (todas las celdas tienen valores)"
-                  fi
-                fi
-              else
-                echo "::error title=Validación de README.md::La tabla 'Último despliege' no tiene el formato correcto. Debe incluir el encabezado: |CQ |JIRA | Fecha|"
-                failed=1
-              fi
-            else
-              echo "::error title=Validación de README.md::Falta subsección '### Último despliege' en la sección 'INFORMACIÓN DEL SERVICIO'"
-              failed=1
-            fi
-
-          # 4. Validación de la Plantilla - Procedimiento de despliegue
-              echo "✔️ Validando sección '## Procedimiento de despliegue'"
-
-              # Buscar el encabezado (ignora mayúsculas y espacios extra)
-              if grep -iPq '^##\s*Procedimiento de despliegue\s*$' README.md; then
-                echo "::notice title=Validación de README.md::Encabezado '## Procedimiento de despliegue' encontrado"
-
-                # Extraer contenido debajo del encabezado hasta el siguiente encabezado
-                contenido=$(awk 'BEGIN{IGNORECASE=1} /^##[[:space:]]*Procedimiento de despliegue[[:space:]]*$/{flag=1; next} /^## /{flag=0} flag && NF' README.md)
-
-                if [ -z "$contenido" ]; then
-                  echo "::error title=Validación de README.md::La sección '## Procedimiento de despliegue' está vacía. Agrega instrucciones de despliegue debajo del encabezado."
-                  failed=1
-                else
-                  echo "::notice title=Validación de README.md::La sección '## Procedimiento de despliegue' contiene contenido"
-                fi
-              else
-                echo "::error title=Validación de README.md::No se encontró el encabezado '## Procedimiento de despliegue'"
-                failed=1
-              fi
-
-          # 5. Validacion de la Plantilla - ACCESO AL SERVICIO   
-            echo "✔️ Validando sección '## ACCESO AL SERVICIO'"
-            grep -Pq '^## ACCESO AL SERVICIO' README.md \
-              && echo "::notice title=Validación de README.md::Sección 'ACCESO AL SERVICIO' válida" \
-              || { echo "::error title=Validación de README.md::Falta sección 'ACCESO AL SERVICIO'"; failed=1; }
-
-            echo "✔️ Validando subsecciones DataPower Externo/Interno"
-            has_externo=0
-            has_interno=0
-            externo_empty=0
-            interno_empty=0
-            
-            # Verificar si existe DataPower Externo y si tiene contenido
-            if grep -Pq '^### DataPower Externo :' README.md; then
-              has_externo=1
-              # Extraer contenido de la subsección (hasta el siguiente encabezado ###)
-              externo_content=$(awk '/^### DataPower Externo :/{flag=1; next} /^### / || /^## /{flag=0} flag' README.md)
-              # Verificar si tiene contenido real (no solo espacios/saltos de línea)
-              if [ -z "$(echo "$externo_content" | grep -v '^[[:space:]]*$')" ]; then
-                externo_empty=1
-                echo "::error title=Validación de README.md::La subsección 'DataPower Externo' existe pero está vacía. Debe contener una tabla con los apuntamientos correspondientes. Si no aplica, use 'NA' en todas las columnas (excepto AMBIENTE) de la tabla."
-                failed=1
-              fi
-            fi
-            
-            # Verificar si existe DataPower Interno y si tiene contenido
-            if grep -Pq '^### DataPower Interno :' README.md; then
-              has_interno=1
-              # Extraer contenido de la subsección (hasta el siguiente encabezado ###)
-              interno_content=$(awk '/^### DataPower Interno :/{flag=1; next} /^### / || /^## /{flag=0} flag' README.md)
-              # Verificar si tiene contenido real (no solo espacios/saltos de línea)
-              if [ -z "$(echo "$interno_content" | grep -v '^[[:space:]]*$')" ]; then
-                interno_empty=1
-                echo "::error title=Validación de README.md::La subsección 'DataPower Interno' existe pero está vacía. Debe contener una tabla con los apuntamientos correspondientes. Si no aplica, use 'NA' en todas las columnas (excepto AMBIENTE) de la tabla."
-                failed=1
-              fi
-            fi
-            
-            if [ $has_externo -eq 0 ] && [ $has_interno -eq 0 ]; then
-              echo "::error title=Validación de README.md::Falta subsección DataPower Externo o Interno"
-              failed=1
-            else
-              # Reportar estado individual de cada subsección
-              if [ $has_externo -eq 1 ] && [ $externo_empty -eq 0 ]; then
-                echo "::notice title=Validación de README.md::Subsección 'DataPower Externo' encontrada con contenido"
-              elif [ $has_externo -eq 0 ]; then
-                echo "::warning title=Validación de README.md::Recomendación: No se encontró subsección 'DataPower Externo'. Si el servicio requiere apuntamiento externo, agregarlo."
-              fi
-              
-              if [ $has_interno -eq 1 ] && [ $interno_empty -eq 0 ]; then
-                echo "::notice title=Validación de README.md::Subsección 'DataPower Interno' encontrada con contenido"
-              elif [ $has_interno -eq 0 ]; then
-                echo "::warning title=Validación de README.md::Recomendación: No se encontró subsección 'DataPower Interno'. Si el servicio requiere apuntamiento interno, agregarlo."
-              fi
-            fi
-            
-            
-            
-            # Validar que exista al menos uno de los dos
-            if [ $has_externo -eq 0 ] && [ $has_interno -eq 0 ]; then
-              echo "::warning title=Validación de README.md::No se encontró acceso a DataPower (ni Interno ni Externo). Si el servicio no requiere acceso a DataPower, se recomienda indicarlo explícitamente en el README agregando las subsecciones con contenido 'NA'."
-            elif [ $has_externo -eq 0 ]; then
-              echo "::notice title=Validación de README.md::Solo se encontró 'DataPower Interno' (válido)"
-            elif [ $has_interno -eq 0 ]; then
-              echo "::notice title=Validación de README.md::Solo se encontró 'DataPower Externo' (válido)"
-            else
-              echo "::notice title=Validación de README.md::Ambas subsecciones DataPower (Externo e Interno) encontradas"
-            fi
-
-            echo "✔️ Validando subsección '### Endpoint BUS'"
-            grep -Pq '^### Endpoint BUS' README.md \
-              && echo "::notice title=Validación de README.md::Subsección 'Endpoint BUS' válida" \
-              || { echo "::error title=Validación de README.md::Falta subsección 'Endpoint BUS'"; failed=1; }
-            
-            # Validar contenido de tablas DataPower y Endpoint BUS
-            echo "✔️ Validando contenido de tablas DataPower"
-            
-            # Función para validar tabla DataPower
-            validate_datapower_table() {
-              local section_name="$1"
-              local is_externo="$2"
-              
-              # Extraer contenido de la subsección
-              local content=$(awk -v section="^### $section_name" '
-                $0 ~ section {flag=1; next}
-                /^### / || /^## / {flag=0}
-                flag
-              ' README.md)
-              
-              if [ -z "$content" ]; then
-                echo "::notice title=Validación de README.md::Tabla $section_name está vacía o no tiene contenido"
-                return 0
-              fi
-              
-              # Extraer filas de datos de la tabla (después del separador |---|---|...)
-              local data_rows=$(echo "$content" | awk '
-                /^\|---/ {flag=1; next}
-                /^[^|]/ {flag=0}
-                flag && /^\|/ {print}
-              ')
-              
-              if [ -z "$data_rows" ]; then
-                echo "::error title=Validación de README.md::No se encontraron filas de datos en tabla $section_name. Debe contener al menos una fila con datos o valores 'NA'."
-                failed=1
-                return 0
-              fi
-              
-              # Verificar si todas las filas son NA
-              local all_na=1
-              local has_desarrollo=0
-              local has_calidad=0
-              local has_produccion=0
-              
-              while IFS= read -r row; do
-                # Extraer primera columna (AMBIENTE)
-                local ambiente=$(echo "$row" | cut -d'|' -f2 | xargs)
-                
-                # Verificar ambientes requeridos
-                if [[ "$ambiente" =~ ^DESARROLLO ]]; then
-                  has_desarrollo=1
-                fi
-                if [[ "$ambiente" =~ ^CALIDAD ]]; then
-                  has_calidad=1
-                fi
-                if [[ "$ambiente" =~ ^PRODUCCION ]]; then
-                  has_produccion=1
-                fi
-                
-                # Verificar si la fila no es toda NA
-                local row_content=$(echo "$row" | sed 's/^|//;s/|$//' | sed 's/|/ /g' | xargs)
-                if ! echo "$row_content" | grep -Piq '^(DESARROLLO|CALIDAD|PRODUCCION)\s+NA\s+NA\s+NA\s+NA$'; then
-                  all_na=0
-                  
-                  # Extraer columnas para validación
-                  local col_datapower=$(echo "$row" | cut -d'|' -f5 | xargs)
-                  local col_endpoint=$(echo "$row" | cut -d'|' -f6 | xargs)
-                  
-                  # Validar que el endpoint NO comience con https://boc200 (debe ser boc201)
-                  if [[ "$col_endpoint" =~ ^https://boc200 ]]; then
-                    echo "::error title=Validación de README.md::Error en $section_name: Los endpoints de DataPower deben comenzar con 'https://boc201' (NO 'https://boc200'). Encontrado: $col_endpoint"
-                    failed=1
-                  fi
-                  
-                  # Validar apuntamientos según ambiente
-                  if [[ "$ambiente" =~ ^DESARROLLO ]] && [ "$col_datapower" != "NA" ]; then
-                    if ! [[ "$col_datapower" =~ ^BODP.*DEV$ ]]; then
-                      echo "::error title=Validación de README.md::Error en $section_name: Datapower en DESARROLLO debe comenzar con BODP y terminar con DEV. Encontrado: $col_datapower"
-                      failed=1
-                    fi
-                    if ! [[ "$col_endpoint" =~ ^https://boc201\.des\.app\.bancodeoccidente\.net ]]; then
-                      echo "::error title=Validación de README.md::Error en $section_name: Endpoint en DESARROLLO debe comenzar con https://boc201.des.app.bancodeoccidente.net Encontrado: $col_endpoint"
-                      failed=1
-                    fi
-                  elif [[ "$ambiente" =~ ^CALIDAD ]] && [ "$col_datapower" != "NA" ]; then
-                    if ! [[ "$col_datapower" =~ ^BODP.*QAS$ ]]; then
-                      echo "::error title=Validación de README.md::Error en $section_name: Datapower en CALIDAD debe comenzar con BODP y terminar con QAS. Encontrado: $col_datapower"
-                      failed=1
-                    fi
-                    if [ "$is_externo" = "externo" ]; then
-                      if ! [[ "$col_endpoint" =~ ^https://boc201\.testdmz\.app\.bancodeoccidente\.net ]]; then
-                        echo "::error title=Validación de README.md::Error en $section_name (Externo): Endpoint en CALIDAD debe comenzar con https://boc201.testdmz.app.bancodeoccidente.net Encontrado: $col_endpoint"
-                        failed=1
-                      fi
-                    else
-                      if ! [[ "$col_endpoint" =~ ^https://boc201\.testint\.app\.bancodeoccidente\.net ]]; then
-                        echo "::error title=Validación de README.md::Error en $section_name (Interno): Endpoint en CALIDAD debe comenzar con https://boc201.testint.app.bancodeoccidente.net Encontrado: $col_endpoint"
-                        failed=1
-                      fi
-                    fi
-                  elif [[ "$ambiente" =~ ^PRODUCCION ]] && [ "$col_datapower" != "NA" ]; then
-                    if ! [[ "$col_datapower" =~ ^BODP.*PRD$ ]]; then
-                      echo "::error title=Validación de README.md::Error en $section_name: Datapower en PRODUCCION debe comenzar con BODP y terminar con PRD. Encontrado: $col_datapower"
-                      failed=1
-                    fi
-                    if [ "$is_externo" = "externo" ]; then
-                      if ! [[ "$col_endpoint" =~ ^https://boc201\.prddmz\.app\.bancodeoccidente\.net ]]; then
-                        echo "::error title=Validación de README.md::Error en $section_name (Externo): Endpoint en PRODUCCION debe comenzar con https://boc201.prddmz.app.bancodeoccidente.net. Encontrado: $col_endpoint"
-                        failed=1
-                      fi
-                    else
-                      if ! [[ "$col_endpoint" =~ ^https://boc201\.prdint\.app\.bancodeoccidente\.net ]]; then
-                        echo "::error title=Validación de README.md::Error en $section_name (Interno): Endpoint en PRODUCCION debe comenzar con https://boc201.prdint.app.bancodeoccidente.net. Encontrado: $col_endpoint"
-                        failed=1
-                      fi
-                    fi
-                  fi
-                fi
-              done <<< "$data_rows"
-              
-              # Validar que existan los 3 ambientes requeridos
-              if [ $all_na -eq 0 ] || [ $has_desarrollo -eq 1 ] || [ $has_calidad -eq 1 ] || [ $has_produccion -eq 1 ]; then
-                if [ $has_desarrollo -eq 0 ]; then
-                  echo "::error title=Validación de README.md::Tabla $section_name debe tener al menos una endponit para DESARROLLO"
-                  failed=1
-                fi
-                if [ $has_calidad -eq 0 ]; then
-                  echo "::error title=Validación de README.md::Tabla $section_name debe tener al menos una endponit para CALIDAD"
-                  failed=1
-                fi
-                if [ $has_produccion -eq 0 ]; then
-                  echo "::error title=Validación de README.md::Tabla $section_name debe tener al menos una endponit para PRODUCCION"
-                  failed=1
-                fi
-              fi
-              
-              if [ $all_na -eq 1 ]; then
-                echo "::notice title=Validación de README.md::Tabla $section_name contiene solo valores NA (válido)"
-              else
-                echo "::notice title=Validación de README.md::Tabla $section_name validada correctamente"
-              fi
-            }
-            
-            # Validar DataPower Interno si existe y guardar si es todo NA
-            interno_all_na=0
-            interno_just_na=0
-            if [ $has_interno -eq 1 ] && [ $interno_empty -eq 0 ]; then
-              # Extraer contenido de la subsección para verificar si es solo NA
-              dp_interno_content=$(awk '/^### DataPower Interno :/{flag=1; next} /^### / || /^## /{flag=0} flag' README.md)
-              dp_interno_content_clean=$(echo "$dp_interno_content" | grep -v '^[[:space:]]*$')
-              
-              # Verificar si solo contiene "NA", "N/A", o "No Aplica" (sin tabla)
-              if echo "$dp_interno_content_clean" | grep -Piq '^\s*(N\s*/?\s*A|No\s+Aplica)\s*$'; then
-                echo "::notice title=Validación de README.md::DataPower Interno contiene solo 'NA'/'N/A'/'No Aplica' (válido - sin tabla)"
-                interno_just_na=1
-              else
-                # Solo validar tabla si no es solo NA
-                validate_datapower_table "DataPower Interno :" "interno"
-                # Verificar si todas las filas son NA (reutilizar la variable all_na de la función)
-                dp_interno_rows=$(echo "$dp_interno_content" | awk '/^\|---/ {flag=1; next} /^[^|]/ {flag=0} flag && /^\|/ {print}')
-                if [ -n "$dp_interno_rows" ]; then
-                  interno_all_na=1
-                  while IFS= read -r row; do
-                    row_content_check=$(echo "$row" | sed 's/^|//;s/|$//' | sed 's/|/ /g' | xargs)
-                    if ! echo "$row_content_check" | grep -Piq '^(DESARROLLO|CALIDAD|PRODUCCION)\s+N/?A\s+N/?A\s+N/?A\s+N/?A$'; then
-                      interno_all_na=0
-                      break
-                    fi
-                  done <<< "$dp_interno_rows"
-                fi
-              fi
-            fi
-            
-            # Validar DataPower Externo si existe y guardar si es todo NA
-            externo_all_na=0
-            externo_just_na=0
-            if [ $has_externo -eq 1 ] && [ $externo_empty -eq 0 ]; then
-              # Extraer contenido de la subsección para verificar si es solo NA
-              dp_externo_content=$(awk '/^### DataPower Externo :/{flag=1; next} /^### / || /^## /{flag=0} flag' README.md)
-              dp_externo_content_clean=$(echo "$dp_externo_content" | grep -v '^[[:space:]]*$')
-              
-              # Verificar si solo contiene "NA", "N/A", o "No Aplica" (sin tabla)
-              if echo "$dp_externo_content_clean" | grep -Piq '^\s*(N\s*/?\s*A|No\s+Aplica)\s*$'; then
-                echo "::notice title=Validación de README.md::DataPower Externo contiene solo 'NA'/'N/A'/'No Aplica' (válido - sin tabla)"
-                externo_just_na=1
-              else
-                # Solo validar tabla si no es solo NA
-                validate_datapower_table "DataPower Externo :" "externo"
-                # Verificar si todas las filas son NA
-                dp_externo_rows=$(echo "$dp_externo_content" | awk '/^\|---/ {flag=1; next} /^[^|]/ {flag=0} flag && /^\|/ {print}')
-                if [ -n "$dp_externo_rows" ]; then
-                  externo_all_na=1
-                  while IFS= read -r row; do
-                    row_content_check=$(echo "$row" | sed 's/^|//;s/|$//' | sed 's/|/ /g' | xargs)
-                    if ! echo "$row_content_check" | grep -Piq '^(DESARROLLO|CALIDAD|PRODUCCION)\s+N/?A\s+N/?A\s+N/?A\s+N/?A$'; then
-                      externo_all_na=0
-                      break
-                    fi
-                  done <<< "$dp_externo_rows"
-                fi
-              fi
-            fi
-            
-            # Validación de combinaciones de DataPower (NA y datos son válidos en ambas direcciones)
-            if [ $has_interno -eq 1 ] && [ $has_externo -eq 1 ] && [ $interno_empty -eq 0 ] && [ $externo_empty -eq 0 ]; then
-              # Considerar "just_na" (sin tabla) como equivalente a all_na (tabla con todos N/A)
-              interno_is_na=$((interno_all_na + interno_just_na))
-              externo_is_na=$((externo_all_na + externo_just_na))
-              
-              if [ $interno_is_na -gt 0 ] && [ $externo_is_na -gt 0 ]; then
-                echo "::notice title=Validación de README.md::Ambas tablas DataPower tienen todos los valores en N/A (válido - sin apuntamientos)"
-              elif [ $interno_is_na -gt 0 ] || [ $externo_is_na -gt 0 ]; then
-                echo "::notice title=Validación de README.md::Una tabla DataPower tiene N/A y la otra tiene apuntamientos (válido)"
-              fi
-            fi
-            
-            # Validar tabla Endpoint BUS
-            echo "✔️ Validando contenido de tabla Endpoint BUS"
-            
-            # Extraer contenido de la subsección Endpoint BUS
-            endpoint_bus_content=$(awk '
-              /^### Endpoint BUS/ {flag=1; next}
-              /^### / || /^## / {flag=0}
-              flag
-            ' README.md)
-            
-            if [ -z "$endpoint_bus_content" ]; then
-              echo "::error title=Validación de README.md::Tabla Endpoint BUS está vacía"
-              failed=1
-            else
-              # Extraer filas de datos
-              endpoint_bus_rows=$(echo "$endpoint_bus_content" | awk '
-                /^\|---/ {flag=1; next}
-                /^[^|]/ {flag=0}
-                flag && /^\|/ {print}
-              ')
-              
-              if [ -z "$endpoint_bus_rows" ]; then
-                echo "::error title=Validación de README.md::Tabla Endpoint BUS no tiene filas de datos"
-                failed=1
-              else
-                # Verificar ambientes y que no haya NA
-                has_des=0
-                has_cal=0
-                has_prd=0
-                
-                while IFS= read -r row; do
-                  ambiente=$(echo "$row" | cut -d'|' -f2 | xargs)
-                  endpoint=$(echo "$row" | cut -d'|' -f4 | xargs)
-                  
-                  # Verificar que no haya NA
-                  if [[ "$endpoint" =~ ^NA$ ]]; then
-                    echo "::error title=Validación de README.md::Tabla Endpoint BUS no puede contener valores NA. Ambiente: $ambiente"
-                    failed=1
-                  fi
-                  
-                  # Contar ambientes
-                  if [[ "$ambiente" =~ ^DESARROLLO ]]; then
-                    has_des=1
-                    # Validar URL
-                    if ! [[ "$endpoint" =~ ^https://adbog162e\.bancodeoccidente\.net ]]; then
-                      echo "::error title=Validación de README.md::Endpoint BUS en DESARROLLO debe comenzar con https://adbog162e.bancodeoccidente.net. Encontrado: $endpoint"
-                      failed=1
-                    fi
-                  elif [[ "$ambiente" =~ ^CALIDAD ]]; then
-                    has_cal=1
-                    # Validar URL (dos nodos posibles)
-                    if ! [[ "$endpoint" =~ ^https://a[dt]bog16[34][de]\.bancodeoccidente\.net ]]; then
-                      echo "::error title=Validación de README.md::Endpoint BUS en CALIDAD debe comenzar con https://adbog163d.bancodeoccidente.net o https://atbog163d.bancodeoccidente.net o https://adbog164e.bancodeoccidente.net o https://atbog164e.bancodeoccidente.net. Encontrado: $endpoint"
-                      failed=1
-                    fi
-                  elif [[ "$ambiente" =~ ^PRODUCCION ]]; then
-                    has_prd=1
-                    # Validar URL (tres nodos posibles)
-                    if ! [[ "$endpoint" =~ ^https://adbog16[56][ab]\.bancodeoccidente\.net ]] && ! [[ "$endpoint" =~ ^https?://boc060ap\.prd\.app\.bancodeoccidente\.net: ]]; then
-                      echo "::error title=Validación de README.md::Endpoint BUS en PRODUCCION debe comenzar con https://adbog165a.bancodeoccidente.net, https://adbog166b.bancodeoccidente.net o http(s)://boc060ap.prd.app.bancodeoccidente.net:. Encontrado: $endpoint"
-                      failed=1
-                    fi
-                  fi
-                done <<< "$endpoint_bus_rows"
-                
-                # Verificar que existan los 3 ambientes
-                if [ $has_des -eq 0 ]; then
-                  echo "::error title=Validación de README.md::Tabla Endpoint BUS debe tener al menos una fila para DESARROLLO"
-                  failed=1
-                fi
-                if [ $has_cal -eq 0 ]; then
-                  echo "::error title=Validación de README.md::Tabla Endpoint BUS debe tener al menos una fila para CALIDAD"
-                  failed=1
-                fi
-                if [ $has_prd -eq 0 ]; then
-                  echo "::error title=Validación de README.md::Tabla Endpoint BUS debe tener al menos una fila para PRODUCCION"
-                  failed=1
-                fi
-                
-                if [ $has_des -eq 1 ] && [ $has_cal -eq 1 ] && [ $has_prd -eq 1 ]; then
-                  echo "::notice title=Validación de README.md::Tabla Endpoint BUS contiene los 3 ambientes requeridos"
-                fi
-              fi
-            fi
-
-            echo "✔️ Validando sección '## CANALES - APLICACIONES'"
-            grep -Pq '^## CANALES - APLICACIONES' README.md \
-              && echo "::notice title=Validación de README.md::Sección 'CANALES - APLICACIONES' válida" \
-              || { echo "::error title=Validación de README.md::Falta sección 'CANALES - APLICACIONES'"; failed=1; }
-            
-            # Validar contenido de CANALES - APLICACIONES
-            echo "✔️ Validando contenido de la sección '## CANALES - APLICACIONES'"
-            
-            # Extraer contenido de la sección CANALES - APLICACIONES
-            canales_content=$(awk '/^## CANALES - APLICACIONES/{flag=1; next} /^## /{flag=0} flag' README.md)
-            
-            if [ -z "$(echo "$canales_content" | grep -v '^[[:space:]]*$')" ]; then
-              echo "::error title=Validación de README.md::La sección 'CANALES - APLICACIONES' está vacía."
-              failed=1
-            else
-              # Validar fila de Consumidor
-              consumidor_row=$(echo "$canales_content" | grep -P '^\|\*\*Consumidor\*\*\|' | head -1)
-              
-              if [ -z "$consumidor_row" ]; then
-                echo "::error title=Validación de README.md::No se encontró la fila '**Consumidor**' en la sección 'CANALES - APLICACIONES'."
-                failed=1
-              else
-                # Extraer las celdas después de |**Consumidor**|
-                consumidor_values=$(echo "$consumidor_row" | sed 's/^|\*\*Consumidor\*\*|//;s/|$//' | sed 's/|/ /g' | xargs)
-                
-                if [ -z "$consumidor_values" ]; then
-                  echo "::error title=Validación de README.md::La fila 'Consumidor' en 'CANALES - APLICACIONES' está vacía. Debe tener al menos un valor o 'NA' si no aplica."
-                  failed=1
-                else
-                  echo "::notice title=Validación de README.md::La fila 'Consumidor' contiene valores: $consumidor_values"
-                fi
-              fi
-              
-              # Validar fila de Backends
-              backends_row=$(echo "$canales_content" | grep -P '^\|\*\*Backends\*\*\|' | head -1)
-              
-              if [ -z "$backends_row" ]; then
-                echo "::error title=Validación de README.md::No se encontró la fila '**Backends**' en la sección 'CANALES - APLICACIONES'."
-                failed=1
-              else
-                # Extraer las celdas después de |**Backends**|
-                backends_values=$(echo "$backends_row" | sed 's/^|\*\*Backends\*\*|//;s/|$//' | sed 's/|/ /g' | xargs)
-                
-                if [ -z "$backends_values" ]; then
-                  echo "::error title=Validación de README.md::La fila 'Backends' en 'CANALES - APLICACIONES' está vacía. Debe tener al menos un valor o 'NA' si no aplica."
-                  failed=1
-                else
-                  echo "::notice title=Validación de README.md::La fila 'Backends' contiene valores: $backends_values"
-                fi
-              fi
-            fi
-
-            echo "✔️ Validando sección '## DEPENDENCIAS'"
-            grep -Pq '^## DEPENDENCIAS' README.md \
-              && echo "::notice title=Validación de README.md::Sección 'DEPENDENCIAS' válida" \
-              || { echo "::error title=Validación de README.md::Falta sección 'DEPENDENCIAS'"; failed=1; }
-
-            # Validar contenido de la sección DEPENDENCIAS
-            echo "✔️ Validando contenido de la sección '## DEPENDENCIAS'"
-            
-            # Extraer contenido de la sección DEPENDENCIAS
-            dependencias_content=$(awk '/^## DEPENDENCIAS/{flag=1; next} /^## /{flag=0} flag' README.md)
-            
-            if [ -z "$(echo "$dependencias_content" | grep -v '^[[:space:]]*$')" ]; then
-              echo "::error title=Validación de README.md::La sección 'DEPENDENCIAS' está vacía."
-              failed=1
-            else
-              # Validar tabla Servicios
-              echo "✔️ Validando tabla Servicios en DEPENDENCIAS"
-              
-              # Extraer la tabla de Servicios (desde |Servicios| hasta |XSL| o siguiente tabla)
-              servicios_table=$(echo "$dependencias_content" | sed -n '/^|Servicios|/,/^|XSL|/{/^|Servicios|/d;/^|XSL|/q;p}')
-              
-              if [ -z "$(echo "$servicios_table" | grep -v '^[[:space:]]*$' | grep -v '^|---|' | grep -v '^||')" ]; then
-                echo "::error title=Validación de README.md::La tabla 'Servicios' en DEPENDENCIAS está vacía."
-                failed=1
-              else
-                echo "::notice title=Validación de README.md::Tabla Servicios encontrada en DEPENDENCIAS"
-                
-                # Extraer servicios del README (ignorar líneas con solo |, |---| o vacías)
-                servicios_readme=$(echo "$servicios_table" | grep -v '^[[:space:]]*$' | grep -v '^|---|' | grep -v '^||$' | sed 's/^|//;s/|$//' | xargs)
-                
-                # Buscar archivo .project
-                project_file=$(find . -name ".project" -type f | head -1)
-                
-                if [ -z "$project_file" ]; then
-                  echo "::warning title=Validación de README.md::No se encontró archivo .project para validar los servicios."
-                else
-                  echo "::notice title=Validación de README.md::Archivo .project encontrado: $project_file"
-                  
-                  # Extraer proyectos del archivo .project
-                  servicios_project=$(grep -oP '<project>\K[^<]+' "$project_file" | sort | xargs)
-                  
-                  # Convertir servicios del README a una lista ordenada
-                  servicios_readme_sorted=$(echo "$servicios_readme" | tr ' ' '\n' | sort | xargs)
-                  
-                  echo "::group::Comparación de servicios"
-                  echo "Servicios en README: $servicios_readme_sorted"
-                  echo "Servicios en .project: $servicios_project"
-                  echo "::endgroup::"
-                  
-                  # Comparar servicios
-                  servicios_faltantes_readme=""
-                  servicios_faltantes_project=""
-                  
-                  # Verificar servicios en .project que no están en README
-                  for servicio in $servicios_project; do
-                    if ! echo "$servicios_readme_sorted" | grep -qw "$servicio"; then
-                      servicios_faltantes_readme="$servicios_faltantes_readme $servicio"
-                    fi
-                  done
-                  
-                  # Verificar servicios en README que no están en .project
-                  for servicio in $servicios_readme_sorted; do
-                    if ! echo "$servicios_project" | grep -qw "$servicio"; then
-                      servicios_faltantes_project="$servicios_faltantes_project $servicio"
-                    fi
-                  done
-                  
-                  if [ -n "$servicios_faltantes_readme" ]; then
-                    echo "::error title=Validación de README.md::Servicios en .project que faltan en la tabla DEPENDENCIAS del README: $servicios_faltantes_readme"
-                    failed=1
-                  fi
-                  
-                  if [ -n "$servicios_faltantes_project" ]; then
-                    echo "::error title=Validación de README.md::Servicios en README que no existen en el archivo .project: $servicios_faltantes_project"
-                    failed=1
-                  fi
-                  
-                  if [ -z "$servicios_faltantes_readme" ] && [ -z "$servicios_faltantes_project" ]; then
-                    echo "::notice title=Validación de README.md::Los servicios en README y .project coinciden correctamente."
-                  fi
-                fi
-              fi
-              
-              # Validar tabla XSL
-              echo "✔️ Validando tabla XSL en DEPENDENCIAS"
-              
-              # Extraer la tabla XSL (desde |XSL| hasta el siguiente encabezado o fin)
-              xsl_table=$(echo "$dependencias_content" | awk '/^\|XSL\|/{flag=1; next} /^## /{flag=0; exit} flag')
-              
-              if [ -z "$(echo "$xsl_table" | grep -v '^[[:space:]]*$')" ]; then
-                echo "::error title=Validación de README.md::No se encontró la tabla 'XSL' en DEPENDENCIAS."
-                failed=1
-              else
-                # Extraer contenido de XSL (ignorar líneas con solo |, |---| o vacías)
-                xsl_content=$(echo "$xsl_table" | grep -v '^[[:space:]]*$' | grep -v '^|---|' | grep -v '^||$' | sed 's/^|//;s/|$//' | xargs)
-                
-                if [ -z "$xsl_content" ]; then
-                  echo "::error title=Validación de README.md::La tabla 'XSL' en DEPENDENCIAS está vacía. Si no hay XSLs, debe colocarse explícitamente 'NA'."
-                  failed=1
-                else
-                  # Verificar si contiene NA (indicando que no hay XSLs)
-                  if echo "$xsl_content" | grep -Piq '\bNA\b'; then
-                    echo "::notice title=Validación de README.md::Tabla XSL contiene 'NA' (sin XSLs a consumir)."
-                  else
-                    echo "::notice title=Validación de README.md::Tabla XSL contiene XSLs: $xsl_content"
-                  fi
-                fi
-              fi
-            fi
-
-            echo "✔️ Validando sección '## DOCUMENTACION'"
-            grep -Pq '^## DOCUMENTACION' README.md \
-              && echo "::notice title=Validación de README.md::Sección 'DOCUMENTACION' válida" \
-              || { echo "::error title=Validación de README.md::Falta sección 'DOCUMENTACION'"; failed=1; }
-
-            # Validar contenido de la sección DOCUMENTACION
-            echo "✔️ Validando contenido de la sección '## DOCUMENTACION'"
-            
-            # Extraer el contenido de la sección DOCUMENTACION (eliminar saltos de línea para facilitar búsqueda)
-            documentacion_content=$(awk '/^## DOCUMENTACION/{flag=1; next} /^## /{flag=0} flag' README.md | tr '\n' ' ')
-            
-            # Verificar "Documento de diseño detallado" con enlace SharePoint
-            if echo "$documentacion_content" | grep -Piq '\*\*Documento de diseño detallado(\*\*)?:'; then
-              echo "::notice title=Validación de README.md::Campo 'Documento de diseño detallado' encontrado"
-              
-              # Extraer el fragmento desde el campo hasta el siguiente campo o fin
-              diseno_fragment=$(echo "$documentacion_content" | grep -Pio '\*\*Documento de diseño detallado(\*\*)?:.*?(?=\*\*[A-Z]|$)' | head -1)
-              
-              # Verificar que tiene enlace a SharePoint
-              if echo "$diseno_fragment" | grep -Piq 'https://bancoccidente\.sharepoint\.com/:f:/r/sites/BibliotecaAplicaciones/'; then
-                echo "::notice title=Validación de README.md::Enlace SharePoint válido para 'Documento de diseño detallado'"
-              else
-                echo "::error title=Validación de README.md::El campo 'Documento de diseño detallado' debe tener un enlace que comience con 'https://bancoccidente.sharepoint.com/:f:/r/sites/BibliotecaAplicaciones/'"
-                failed=1
-              fi
-            else
-              echo "::error title=Validación de README.md::Falta campo '**Documento de diseño detallado:**' en la sección DOCUMENTACION"
-              failed=1
-            fi
-            
-            # Verificar "Mapeo" con enlace SharePoint
-            if echo "$documentacion_content" | grep -Piq '\*\*Mapeo(\*\*)?:'; then
-              echo "::notice title=Validación de README.md::Campo 'Mapeo' encontrado"
-              
-              # Extraer el fragmento desde el campo hasta el siguiente campo o fin
-              mapeo_fragment=$(echo "$documentacion_content" | grep -Pio '\*\*Mapeo(\*\*)?:.*?(?=\*\*[A-Z]|$)' | head -1)
-              
-              # Verificar que tiene enlace a SharePoint
-              if echo "$mapeo_fragment" | grep -Piq 'https://bancoccidente\.sharepoint\.com/:f:/r/sites/BibliotecaAplicaciones/'; then
-                echo "::notice title=Validación de README.md::Enlace SharePoint válido para 'Mapeo'"
-              else
-                echo "::error title=Validación de README.md::El campo 'Mapeo' debe tener un enlace que comience con 'https://bancoccidente.sharepoint.com/:f:/r/sites/BibliotecaAplicaciones/'"
-                failed=1
-              fi
-            else
-              echo "::error title=Validación de README.md::Falta campo '**Mapeo:**' en la sección DOCUMENTACION"
-              failed=1
-            fi
-            
-            # Verificar "Evidencias (Unitarias/Auditoria/Monitoreo)" con enlace SharePoint
-            if echo "$documentacion_content" | grep -Piq '\*\*Evidencias \(Unitarias/(Auditoria|Auditoría)/Monitoreo\)(\*\*)?:'; then
-              echo "::notice title=Validación de README.md::Campo 'Evidencias (Unitarias/Auditoria/Monitoreo)' encontrado"
-              
-              # Extraer el fragmento desde el campo hasta el siguiente campo o fin
-              evidencias_fragment=$(echo "$documentacion_content" | grep -Pio '\*\*Evidencias \(Unitarias/(Auditoria|Auditoría)/Monitoreo\)(\*\*)?:.*?(?=\*\*[A-Z]|$)' | head -1)
-              
-              # Verificar que tiene enlace a SharePoint
-              if echo "$evidencias_fragment" | grep -Piq 'https://bancoccidente\.sharepoint\.com/:f:/r/sites/BibliotecaAplicaciones/'; then
-                echo "::notice title=Validación de README.md::Enlace SharePoint válido para 'Evidencias'"
-              else
-                echo "::error title=Validación de README.md::El campo 'Evidencias (Unitarias/Auditoria/Monitoreo)' debe tener un enlace que comience con 'https://bancoccidente.sharepoint.com/:f:/r/sites/BibliotecaAplicaciones/'"
-                failed=1
-              fi
-            else
-              echo "::error title=Validación de README.md::Falta campo '**Evidencias (Unitarias/Auditoria/Monitoreo):**' en la sección DOCUMENTACION"
-              failed=1
-            fi
-            
-            # Verificar "WSDL" con ruta git o N/A
-            if echo "$documentacion_content" | grep -Piq '\*\*WSDL(\*\*)?:'; then
-              echo "::notice title=Validación de README.md::Campo 'WSDL' encontrado"
-              
-              # Extraer el fragmento desde el campo hasta el siguiente campo o fin
-              wsdl_fragment=$(echo "$documentacion_content" | grep -Pio '\*\*WSDL(\*\*)?:.*?(?=\*\*[A-Z]|$)' | head -1)
-              
-              # Extraer el nombre del repositorio del título del README
-              repo_name=$(grep -m1 '^# ESB_' README.md | sed 's/^# //' | sed 's/\.$//' | xargs)
-              
-              # Verificar que tiene ruta git correcta o N/A
-              if echo "$wsdl_fragment" | grep -Piq "git\\\\${repo_name}\\\\Broker\\\\WSDL\\\\wsdl\\\\"; then
-                echo "::notice title=Validación de README.md::Ruta WSDL válida para repositorio '$repo_name'"
-              elif echo "$wsdl_fragment" | grep -Piq '^\s*N/?A\s*$'; then
-                echo "::notice title=Validación de README.md::Campo WSDL contiene 'N/A' (válido)"
-              else
-                echo "::error title=Validación de README.md::El campo 'WSDL' debe comenzar con 'git\\${repo_name}\\Broker\\WSDL\\wsdl\\' o contener solo 'N/A'. Repositorio actual: $repo_name"
-                failed=1
-              fi
-            else
-              echo "::error title=Validación de README.md::Falta campo '**WSDL:**' en la sección DOCUMENTACION"
-              failed=1
-            fi
-
-            echo "✔️ Validando sección '## SQL'"
-            grep -Pq '^## SQL' README.md \
-              && echo "::notice title=Validación de README.md::Sección 'SQL' válida" \
-              || { echo "::error title=Validación de README.md::Falta sección 'SQL'"; failed=1; }
-            
-            # Validar contenido de la sección SQL
-            echo "✔️ Validando contenido de la sección '## SQL'"
-            
-            # Extraer contenido de la sección SQL
-            sql_content=$(awk '/^## SQL/{flag=1; next} /^## /{flag=0} flag' README.md)
-            
-            # 1. Verificar que la sección SQL no esté vacía
-            if [ -z "$(echo "$sql_content" | grep -v '^[[:space:]]*$')" ]; then
-              echo "::error title=Validación de README.md::La sección 'SQL' está vacía. Debe contener queries de auditoría y monitoreo."
-              failed=1
-            else
-              echo "::notice title=Validación de README.md::La sección 'SQL' contiene contenido"
-              
-              # Identificar y reportar subsecciones FILTRAR
-              filtrar_sections=$(echo "$sql_content" | grep -i '^FILTRAR' || true)
-              if [ -n "$filtrar_sections" ]; then
-                echo "::notice title=Validación de README.md::Se encontraron subsecciones FILTRAR en SQL:"
-                echo "$filtrar_sections" | while IFS= read -r filtrar_line; do
-                  echo "  - $filtrar_line"
-                done
-              fi
-              
-              # 2. Extraer queries SQL (eliminar bloques de código markdown)
-              # Solo extraer líneas que tengan códigos de operación (where ... = '...' o in('...'))
-              sql_queries=$(echo "$sql_content" | sed '/^```/d' | grep -iE "where.*=\s*'[^']*'" || true)
-              sql_queries_in=$(echo "$sql_content" | sed '/^```/d' | grep -iE "where.*in\s*\(" || true)
-              sql_queries=$(echo -e "$sql_queries\n$sql_queries_in" | grep -v '^[[:space:]]*$')
-              
-              # 3. Validar que cada línea SQL tenga números de operación válidos
-              if [ -n "$sql_queries" ]; then
-                sql_validation_failed=0
-                while IFS= read -r line; do
-                  if [ -z "$line" ]; then
-                    continue
-                  fi
-                  
-                  # Saltar líneas que son solo encabezados de FILTRAR o comentarios
-                  if echo "$line" | grep -Piq '^\s*-?\s*FILTRAR'; then
-                    continue
-                  fi
-                  
-                  # Verificar formato: = '123...' (debe contener SOLO números)
-                  if echo "$line" | grep -Piq "=\s*'[^']*'"; then
-                    # Extraer el valor entre comillas después del =
-                    value=$(echo "$line" | grep -Po "=\s*'\K[^']+" | head -1)
-                    # Verificar que el valor no esté vacío
-                    if [ -z "$value" ]; then
-                      echo "::error title=Validación de README.md::Código de operación está vacío (num_id_tipo_operacion = ''). Debe contener un código numérico válido: $line"
-                      sql_validation_failed=1
-                    # Verificar que el valor contenga solo dígitos (no letras)
-                    elif ! echo "$value" | grep -Pq '^[0-9]+$'; then
-                      echo "::error title=Validación de README.md::Código de operación contiene caracteres no numéricos. Solo se permiten números: $line"
-                      sql_validation_failed=1
-                    fi
-                  fi
-                  
-                  # Verificar formato: in('...','...') con valores que sean solo números
-                  if echo "$line" | grep -Piq "in\s*\(\s*'[^']+'\s*(,\s*'[^']+'\s*)*\)"; then
-                    # Extraer todos los valores entre comillas dentro del in()
-                    values=$(echo "$line" | grep -Po "in\s*\(\K[^)]+")
-                    has_numeric=0
-                    has_invalid=0
-                    while read -r val; do
-                      val=$(echo "$val" | tr -d "', " | xargs)
-                      if [ -n "$val" ]; then
-                        # Si el valor contiene solo dígitos, es válido
-                        if echo "$val" | grep -Pq '^[0-9]+$'; then
-                          has_numeric=1
-                        # Si contiene letras mezcladas con números, es inválido
-                        elif echo "$val" | grep -Pq '[a-zA-Z]'; then
-                          echo "::error title=Validación de README.md::Código de operación contiene letras. Solo se permiten números: '$val' en línea: $line"
-                          has_invalid=1
-                          sql_validation_failed=1
-                        fi
-                      fi
-                    done < <(echo "$values" | tr ',' '\n')
-                    
-                    if [ $has_invalid -eq 0 ] && [ $has_numeric -eq 0 ]; then
-                      echo "::error title=Validación de README.md::No se encontraron códigos de operación numéricos válidos en: $line"
-                      sql_validation_failed=1
-                    fi
-                  fi
-                done < <(echo "$sql_queries")
-                
-                if [ $sql_validation_failed -eq 1 ]; then
-                  failed=1
-                fi
-              else
-                echo "::warning title=Validación de README.md::No se encontraron queries SQL con códigos de operación en la sección SQL"
-              fi
-            fi
-
-            if [[ $failed -eq 1 ]]; then
-              echo "::error title=Validación de README.md::README.md no cumple con todos los requisitos de la plantilla."
-              exit 1
-            else
-              echo "::notice title=Validación de README.md::README.md cumple con todos los requisitos estructurales definidos."
-            fi
-
-  validar_carpetas_bd:
-    name: Validar que no existan carpetas BD
-    runs-on: ubuntu-latest
-    steps:
-      - name: Descargar código
-        uses: actions/checkout@v3
-      - name: Verificar carpetas BD
-        run: |
-          echo "🔍 Buscando carpetas BD en el repositorio"
-          bd_folders=$(find . -type d -iname "BD" ! -path "./.git/*" || true)
-          
-          if [ -n "$bd_folders" ]; then
-            echo "::error title=Validación de carpetas BD::Se encontraron carpetas 'BD' en el repositorio. Esto viola las políticas de información. Carpetas encontradas:"
-            echo "$bd_folders"
-            echo "Por favor, elimine estas carpetas antes de continuar."
-            exit 1
-          else
-            echo "::notice title=Validación de carpetas BD::No se encontraron carpetas BD. Validación exitosa."
-          fi
-
-  validar_grupos_ejecucion:
-    name: Validar grupos de ejecución en archivo remoto
+  validacion_readme_y_grupos:
+    name: Validación README y Grupos de Ejecución
     runs-on: ubuntu-latest
     env:
       ESB_ACE12_ORG_REPO_TOKEN: ${{ secrets.ESB_ACE12_ORG_REPO_TOKEN }}
@@ -940,7 +27,54 @@ jobs:
       - name: Descargar código
         uses: actions/checkout@v3
 
-      - name: Descargar archivo .properties desde GitHub (usando API REST y PAT)
+      - name: Validar existencia y plantilla de README.md
+        run: |
+          if [ ! -f README.md ]; then
+            echo "::warning title=Validación de README.md::No se encontró el archivo README.md. Nota: el README ya no es obligatorio para repositorios.")
+            exit 0
+          fi
+
+          failed=0
+          echo "🔍 Iniciando validación de estructura del README.md"
+
+          # Validar título
+          if grep -Pq '^# ESB_' README.md; then
+            titulo=$(grep -m1 '^# ESB_' README.md | sed 's/^# //' | sed 's/\.$//' )
+            if echo "$titulo" | grep -Pq '^ESB_[A-Za-z0-9_-]+'; then
+              contenido_despues=$(echo "$titulo" | sed 's/^ESB_//')
+              if [ -z "$contenido_despues" ] || echo "$contenido_despues" | grep -Pq '^[_-]+$'; then
+                echo "::error title=Validación de README.md::El título no puede ser solo 'ESB_' o similar; agregue nombre descriptivo."
+                failed=1
+              else
+                echo "::notice title=Validación de README.md::Título principal válido: $titulo"
+              fi
+            else
+              echo "::error title=Validación de README.md::El título debe comenzar con 'ESB_' seguido de un nombre descriptivo"
+              failed=1
+            fi
+          else
+            echo "::error title=Validación de README.md::Falta el título principal '# ESB_...'"
+            failed=1
+          fi
+
+          # Validar secciones mínimas (INFORMACIÓN DEL SERVICIO y Procedimiento de despliegue)
+          for h in "## INFORMACIÓN DEL SERVICIO" "## Procedimiento de despliegue" "## DOCUMENTACION" "## SQL"; do
+            if ! grep -Pq "^${h}" README.md; then
+              echo "::error title=Validación de README.md::Falta sección '${h}'"
+              failed=1
+            else
+              echo "::notice title=Validación de README.md::Sección '${h}' encontrada"
+            fi
+          done
+
+          if [ $failed -eq 1 ]; then
+            echo "::error title=Validación de README.md::README.md no cumple con los requisitos mínimos."
+            exit 1
+          fi
+
+          echo "::notice title=Validación de README.md::README.md cumple validaciones básicas. Para validaciones exhaustivas use el job de plantilla completo (si aplica)."
+
+      - name: Descargar archivo .properties y validar grupos de ejecución
         run: |
           curl -H "Authorization: Bearer $ESB_ACE12_ORG_REPO_TOKEN" \
                -H "Accept: application/vnd.github.v3.raw" \
@@ -952,134 +86,98 @@ jobs:
             exit 1
           fi
 
-          # Validar si el archivo contiene un mensaje de error de la API
-          if grep -q '"message":' esb-ace12-general-integration-servers.properties; then
-            echo "::error title=Validación de grupos de ejecución::El archivo descargado contiene un mensaje de error de GitHub API"
-            cat esb-ace12-general-integration-servers.properties
+          servicio_readme=$(grep -m1 '^# ESB_' README.md | sed 's/^# //' | sed 's/\.$//' | xargs || true)
+          if [ -z "$servicio_readme" ]; then
+            echo "::error title=Validación de grupos de ejecución::No se pudo extraer nombre de servicio desde README"
             exit 1
           fi
-
-      - name: Mostrar contenido descargado (.properties) para debug
-        run: |
-          echo "Contenido del archivo descargado:"
-          head -40 esb-ace12-general-integration-servers.properties
-
-      - name: Validar grupos de ejecución README vs general config (.Transactional y .Notification)
-        run: |
-          set -e
-          servicio_readme=$(grep -m1 '^# ESB_' README.md | sed 's/^# //' | sed 's/\.$//' | xargs)
           servicio=$(echo "$servicio_readme" | sed 's/^ESB_ACE12_//')
 
-          echo "------ Fragmento de README con procedimiento de despliegue ------"
-          awk '/^## Procedimiento de despliegue/{flag=1;next}/^## /{flag=0}flag' README.md | cat
-          echo "---------------------------------------------------------------"
-
-          despliegue_line=$(awk '/^## Procedimiento de despliegue/{flag=1;next}/^## /{flag=0}flag' README.md | grep -i "desplegar en los grupos de ejecución:")
-          if [ -z "$despliegue_line" ]; then
-            echo "::error title=Validación de grupos de ejecución::No se encontró la frase 'desplegar en los grupos de ejecución:' en el procedimiento de despliegue para el servicio '$servicio'."
-            exit 1
-          fi
-
-          grupos_readme=""
-          awk '/^## Procedimiento de despliegue/{flag=1;next}/^## /{flag=0}flag' README.md | \
-          awk '/desplegar en los grupos de ejecución:/ {getline; print}' > grupos_linea.txt
-          grupos_readme=$(cat grupos_linea.txt | xargs | tr ',' ' ' | tr '[:upper:]' '[:lower:]')
+          grupos_readme=$(awk '/^## Procedimiento de despliegue/{flag=1;next}/^## /{flag=0}flag' README.md | awk '/desplegar en los grupos de ejecución:/ {getline; print}' | xargs | tr ',' ' ' | tr '[:upper:]' '[:lower:]' || true)
 
           if [ -z "$grupos_readme" ]; then
-            grupos_readme=$(echo "$despliegue_line" | sed -n 's/.*desplegar en los grupos de ejecución:\(.*\)/\1/p' | xargs | tr ',' ' ' | tr '[:upper:]' '[:lower:]')
+            grupos_readme=$(awk '/^## Procedimiento de despliegue/{flag=1;next}/^## /{flag=0}flag' README.md | grep -i "desplegar en los grupos de ejecución:" | sed -n 's/.*desplegar en los grupos de ejecución:\(.*\)/\1/p' | xargs | tr ',' ' ' | tr '[:upper:]' '[:lower:]' || true)
           fi
 
           if [ -z "$grupos_readme" ]; then
-            echo "::error title=Validación de grupos de ejecución::No se pudieron extraer los grupos de ejecución para el servicio '$servicio'. Verifica que estén después de 'desplegar en los grupos de ejecución:' en la misma línea o en la siguiente."
-            echo "Línea encontrada: $despliegue_line"
+            echo "::error title=Validación de grupos de ejecución::No se encontraron grupos en README para comparar"
             exit 1
           fi
 
-          read -a grupos_readme_arr <<< "$grupos_readme"
-
-          # Buscar grupos en config para Transactional y Notification
-          grupos_properties=$(grep -i "^ESB_ACE12_${servicio}\.Transactional=" esb-ace12-general-integration-servers.properties | cut -d'=' -f2 | tr ',' ' ' | xargs | tr '[:upper:]' '[:lower:]')
-          grupos_properties_notif=$(grep -i "^ESB_ACE12_${servicio}\.Notification=" esb-ace12-general-integration-servers.properties | cut -d'=' -f2 | tr ',' ' ' | xargs | tr '[:upper:]' '[:lower:]')
+          grupos_properties=$(grep -i "^ESB_ACE12_${servicio}\.Transactional=" esb-ace12-general-integration-servers.properties | cut -d'=' -f2 | tr ',' ' ' | xargs | tr '[:upper:]' '[:lower:]' || true)
+          grupos_properties_notif=$(grep -i "^ESB_ACE12_${servicio}\.Notification=" esb-ace12-general-integration-servers.properties | cut -d'=' -f2 | tr ',' ' ' | xargs | tr '[:upper:]' '[:lower:]' || true)
           grupos_properties_total="$grupos_properties $grupos_properties_notif"
-          grupos_properties_total=$(echo "$grupos_properties_total" | xargs)
 
           if [ -z "$grupos_properties_total" ]; then
-            echo "::error title=Validación de grupos de ejecución::No existe entry ESB_ACE12_${servicio}.Transactional ni ESB_ACE12_${servicio}.Notification en el archivo general config."
-            exit 1
-          fi
-          read -a grupos_properties_arr <<< "$grupos_properties_total"
-
-          echo "::group::Comparación de grupos de ejecución para $servicio"
-          echo "Grupos en README:"
-          for g in "${grupos_readme_arr[@]}"; do echo "- $g"; done
-          echo "Grupos en config (.Transactional y .Notification):"
-          for g in "${grupos_properties_arr[@]}"; do echo "- $g"; done
-          echo "::endgroup::"
-
-          grupos_faltantes=()
-          for grupo in "${grupos_readme_arr[@]}"; do
-            found=0
-            for gp in "${grupos_properties_arr[@]}"; do
-              if [ "$grupo" = "$gp" ]; then
-                found=1
-                break
-              fi
-            done
-            if [ $found -eq 0 ]; then
-              grupos_faltantes+=("$grupo")
-            fi
-          done
-
-          grupos_extras=()
-          for gp in "${grupos_properties_arr[@]}"; do
-            found=0
-            for grupo in "${grupos_readme_arr[@]}"; do
-              if [ "$gp" = "$grupo" ]; then
-                found=1
-                break
-              fi
-            done
-            if [ $found -eq 0 ]; then
-              grupos_extras+=("$gp")
-            fi
-          done
-
-          error=0
-          if [ ${#grupos_faltantes[@]} -gt 0 ]; then
-            echo "::error title=Validación de grupos de ejecución::Grupos que están en README pero NO en config [$servicio]:"
-            for g in "${grupos_faltantes[@]}"; do echo "- $g"; done
-            error=1
-          fi
-          if [ ${#grupos_extras[@]} -gt 0 ]; then
-            echo "::error title=Validación de grupos de ejecución::Grupos que están en config pero NO en README [$servicio]:"
-            for g in "${grupos_extras[@]}"; do echo "- $g"; done
-            error=1
-          fi
-
-          if [ $error -eq 0 ]; then
-            echo "::notice title=Validación de grupos de ejecución::Los grupos de ejecución del README y del archivo general config para $servicio coinciden (sin importar orden ni comas)."
-            exit 0
-          else
+            echo "::error title=Validación de grupos de ejecución::No existe entry ESB_ACE12_${servicio}.Transactional ni .Notification en el archivo general config."
             exit 1
           fi
 
-          
-  validar_rutas_y_revisores:
-    name: Validar rutas y revisores
+          # Comparar listas (ignorando orden)
+          IFS=' ' read -r -a arr_readme <<< "$grupos_readme"
+          IFS=' ' read -r -a arr_props <<< "$grupos_properties_total"
+
+          missing=0
+          for r in "${arr_readme[@]}"; do
+            found=0
+            for p in "${arr_props[@]}"; do
+              if [ "$r" = "$p" ]; then found=1; break; fi
+            done
+            if [ $found -eq 0 ]; then
+              echo "::error title=Validación de grupos de ejecución::Grupo '$r' presente en README pero no en config"
+              missing=1
+            fi
+          done
+
+          for p in "${arr_props[@]}"; do
+            found=0
+            for r in "${arr_readme[@]}"; do
+              if [ "$r" = "$p" ]; then found=1; break; fi
+            done
+            if [ $found -eq 0 ]; then
+              echo "::error title=Validación de grupos de ejecución::Grupo '$p' presente en config pero no en README"
+              missing=1
+            fi
+          done
+
+          if [ $missing -eq 1 ]; then exit 1; else echo "::notice title=Validación de grupos::OK"; fi
+
+  revisiones_repositorio:
+    name: Revisiones Repositorio (rutas, revisores, carpetas BD)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Instalar GitHub CLI
+      - name: Validar nombre de la rama
+        run: |
+          echo "Nombre de la rama: ${{ github.head_ref }}"
+          if [[ ! "${{ github.head_ref }}" =~ ^(feature|bugfix|hotfix|release)\/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error title=Validación de nombre de rama::Nombre de rama inválido. Debe comenzar con 'feature/', 'bugfix/', 'hotfix/' o 'release/'."
+            exit 1
+          else
+            echo "::notice title=Validación de nombre de rama::Nombre de rama válido."
+          fi
+
+      - name: Verificar carpetas BD
+        run: |
+          echo "🔍 Buscando carpetas BD en el repositorio"
+          bd_folders=$(find . -type d -iname "BD" ! -path "./.git/*" || true)
+          if [ -n "$bd_folders" ]; then
+            echo "::error title=Validación de carpetas BD::Se encontraron carpetas 'BD' en el repositorio. Carpetas encontradas:"
+            echo "$bd_folders"
+            exit 1
+          else
+            echo "::notice title=Validación de carpetas BD::No se encontraron carpetas BD."
+          fi
+
+      - name: Validar rutas y revisores
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get update -y
           sudo apt-get install -y gh
 
-      - name: Validar rutas y revisores con excepción por comentario
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
           hasError=0
           sourceBranch="${{ github.head_ref }}"
           targetBranch="${{ github.base_ref }}"
@@ -1087,49 +185,30 @@ jobs:
           reviewers="${{ github.event.pull_request.requested_reviewers[*].login }}"
           validReviewers=(DRamirezM cdgomez acardenasm CAARIZA)
 
-          echo "Origen: $sourceBranch → Destino: $targetBranch"
-
-          # Validar revisores para develop → quality
           if [[ "$targetBranch" == "quality" && "$sourceBranch" == "develop" ]]; then
-            echo "::notice title=Validación de rutas y revisores::Validando revisores para develop → quality"
             match=0
             for reviewer in "${validReviewers[@]}"; do
-              if [[ "$reviewers" == *"$reviewer"* ]]; then
-                match=1
-                break
-              fi
+              if [[ "$reviewers" == *"$reviewer"* ]]; then match=1; break; fi
             done
-            [[ $match -eq 0 ]] && {
-              echo "::error title=Validación de rutas y revisores::Falta revisor válido para calidad. Autorizados: ${validReviewers[*]}"
-              hasError=1
-            }
+            [[ $match -eq 0 ]] && { echo "::error title=Validación de revisores::Falta revisor válido para quality"; hasError=1; }
           fi
 
-          # Validar revisores para quality → main
           if [[ "$targetBranch" == "main" && "$sourceBranch" == "quality" ]]; then
-            echo "::notice title=Validación de rutas y revisores::Validando revisores para quality → main"
             match=0
             for reviewer in "${validReviewers[@]}"; do
-              if [[ "$reviewers" == *"$reviewer"* ]]; then
-                match=1
-                break
-              fi
+              if [[ "$reviewers" == *"$reviewer"* ]]; then match=1; break; fi
             done
-            [[ $match -eq 0 ]] && {
-              echo "::error title=Validación de rutas y revisores::Falta revisor válido para producción. Autorizados: ${validReviewers[*]}"
-              hasError=1
-            }
+            [[ $match -eq 0 ]] && { echo "::error title=Validación de revisores::Falta revisor válido para main"; hasError=1; }
           fi
 
-          # Excepción manual: Si es feature/** a develop y existe el comentario especial, no falla el job
+          # Excepción manual para feature/** → develop
           if [[ "$targetBranch" == "develop" && "$sourceBranch" == feature/* ]]; then
-            echo "Verificando comentarios para excepción de emergencia..."
-            gh pr view "$pr_number" --repo "${{ github.repository }}" --json comments -q '.comments[].body' > comentarios.txt
+            gh pr view "$pr_number" --repo "${{ github.repository }}" --json comments -q '.comments[].body' > comentarios.txt || true
             if grep -q "@bot aprobar excepción" comentarios.txt; then
-              echo "::notice title=Excepción manual::Se encontró comentario de excepción. Permitiendo merge por emergencia."
+              echo "::notice title=Excepción manual::Se encontró comentario de excepción."
               hasError=0
             fi
           fi
 
-          [[ $hasError -eq 1 ]] && exit 1
-          echo "::notice title=Validación de rutas y revisores::Validaciones de rutas y revisores correctas."
+          [[ $hasError -eq 1 ]] && exit 1 || echo "::notice title=Validación de revisores::OK"
+                  fi

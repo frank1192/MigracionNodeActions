@@ -5,6 +5,10 @@
 > **Workflow Version**: checklist.yml v1.0  
 > **Responsable**: Equipo ESB/ACE
 
+> **Prioridad del workflow `checklist.yml`**: Alta
+
+> **Nota:** El `README.md` dentro de cada repositorio ya no es obligatorio. Este action centralizado se encargará de las validaciones y documentación mínima requerida.
+
 ## Resumen Ejecutivo
 
 El workflow `checklist.yml` es un sistema automatizado de validación continua que garantiza el cumplimiento de estándares de documentación, configuración y gobernanza para servicios ESB/ACE12 desplegados en IBM Integration Bus (IIB) / App Connect Enterprise (ACE). Este workflow implementa 6 jobs de validación independientes que se ejecutan en paralelo, validando más de 40 reglas críticas de negocio y técnicas.
