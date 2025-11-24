@@ -2,6 +2,15 @@
 
 Acción reutilizable de GitHub para validar repositorios de servicios ESB/ACE12 cumpliendo con estándares de documentación y configuración.
 
+## 📌 Uso de la Acción
+
+**Referencia oficial para uso:**
+```yaml
+uses: bocc-principal/ESB_ACE12_Validate_Readme_Action@main
+```
+
+Esta es la nomenclatura estándar y oficial para invocar esta acción en tus workflows de GitHub Actions.
+
 ## 🚀 Características
 
 - ✅ Validación consolidada de README y grupos de ejecución
@@ -44,7 +53,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ejecutar validaciones
-        uses: frank1192/MigracionNodeActions@main
+        uses: bocc-principal/ESB_ACE12_Validate_Readme_Action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           config-repo-token: ${{ secrets.ESB_ACE12_ORG_REPO_TOKEN }}
@@ -58,7 +67,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validar nombre de rama
-        uses: frank1192/MigracionNodeActions@main
+        uses: bocc-principal/ESB_ACE12_Validate_Readme_Action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -130,7 +139,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Validar README y Configuración
-        uses: frank1192/MigracionNodeActions@main
+        uses: bocc-principal/ESB_ACE12_Validate_Readme_Action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           config-repo-token: ${{ secrets.ESB_ACE12_ORG_REPO_TOKEN }}
@@ -143,7 +152,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Validar Repositorio
-        uses: frank1192/MigracionNodeActions@main
+        uses: bocc-principal/ESB_ACE12_Validate_Readme_Action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -162,7 +171,7 @@ Ejemplo de uso de outputs:
 ```yaml
 - name: Validar
   id: validate
-  uses: frank1192/MigracionNodeActions@main
+  uses: bocc-principal/ESB_ACE12_Validate_Readme_Action@main
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
 
