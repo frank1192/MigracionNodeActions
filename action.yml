@@ -1,0 +1,33 @@
+name: 'ESB ACE12 Checklist Validation'
+description: 'Validates ESB/ACE12 service repositories for compliance with documentation and configuration standards'
+author: 'Banco de Occidente - ESB Team'
+
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access (defaults to GITHUB_TOKEN)'
+    required: false
+    default: ${{ github.token }}
+  
+  config-repo-token:
+    description: 'Personal Access Token with access to ESB_ACE12_General_Configs repository'
+    required: false
+  
+  skip-readme-validation:
+    description: 'Skip README validation (useful for non-service repositories)'
+    required: false
+    default: 'false'
+
+outputs:
+  validation-passed:
+    description: 'Whether all validations passed (true/false)'
+  
+  results:
+    description: 'JSON object with detailed validation results'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
