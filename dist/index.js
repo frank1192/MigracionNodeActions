@@ -8,7 +8,6 @@ const core = __nccwpck_require__(7484);
 const github = __nccwpck_require__(3228);
 const fs = __nccwpck_require__(9896);
 const path = __nccwpck_require__(6928);
-const { execSync } = __nccwpck_require__(5317);
 
 /**
  * Main entry point for the ESB/ACE12 Checklist Action
@@ -212,21 +211,33 @@ async function validateReadmeTemplate() {
  * Validate no BD folders exist
  */
 async function validateNoBDFolders() {
-  try {
-    const result = execSync('find . -type d -iname "BD" ! -path "./.git/*"', { encoding: 'utf8' });
+  const findBDFolders = (dir, results = []) => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
     
-    if (result.trim()) {
-      throw new Error(`Se encontraron carpetas 'BD' en el repositorio:\n${result}`);
+    for (const entry of entries) {
+      if (entry.name === '.git') continue; // Skip .git directory
+      
+      const fullPath = path.join(dir, entry.name);
+      
+      if (entry.isDirectory()) {
+        if (entry.name.toLowerCase() === 'bd') {
+          results.push(fullPath);
+        }
+        // Recursively search subdirectories
+        findBDFolders(fullPath, results);
+      }
     }
     
-    return true;
-  } catch (error) {
-    if (error.message.includes('Se encontraron carpetas')) {
-      throw error;
-    }
-    // Command executed successfully but found nothing
-    return true;
+    return results;
+  };
+  
+  const bdFolders = findBDFolders(process.cwd());
+  
+  if (bdFolders.length > 0) {
+    throw new Error(`Se encontraron carpetas 'BD' en el repositorio:\n${bdFolders.join('\n')}`);
   }
+  
+  return true;
 }
 
 /**
@@ -260,21 +271,27 @@ async function validateExecutionGroups(token) {
       .filter(g => g.trim())
       .map(g => g.toLowerCase());
     
-    // Download central configuration
-    const configUrl = `https://api.github.com/repos/bocc-principal/ESB_ACE12_General_Configs/contents/ace-12-common-properties/esb-ace12-general-integration-servers.properties?ref=main`;
+    // Download central configuration using @actions/github
+    const octokit = github.getOctokit(token);
+    let response;
     
-    const response = execSync(
-      `curl -s -H "Authorization: Bearer ${token}" -H "Accept: application/vnd.github.v3.raw" "${configUrl}"`,
-      { encoding: 'utf8' }
-    );
-    
-    if (response.includes('"message"')) {
+    try {
+      response = await octokit.rest.repos.getContent({
+        owner: 'bocc-principal',
+        repo: 'ESB_ACE12_General_Configs',
+        path: 'ace-12-common-properties/esb-ace12-general-integration-servers.properties',
+        ref: 'main'
+      });
+    } catch (error) {
       throw new Error('No se pudo descargar el archivo de configuración central');
     }
     
+    // Decode base64 content
+    const configContent = Buffer.from(response.data.content, 'base64').toString('utf8');
+    
     // Extract groups from config
-    const transactionalMatch = response.match(new RegExp(`ESB_ACE12_${serviceName}\\.Transactional=([^\n]+)`, 'i'));
-    const notificationMatch = response.match(new RegExp(`ESB_ACE12_${serviceName}\\.Notification=([^\n]+)`, 'i'));
+    const transactionalMatch = configContent.match(new RegExp(`ESB_ACE12_${serviceName}\\.Transactional=([^\n]+)`, 'i'));
+    const notificationMatch = configContent.match(new RegExp(`ESB_ACE12_${serviceName}\\.Notification=([^\n]+)`, 'i'));
     
     if (!transactionalMatch && !notificationMatch) {
       throw new Error(`No existe entry ESB_ACE12_${serviceName}.Transactional ni ESB_ACE12_${serviceName}.Notification en el archivo de configuración`);
@@ -299,7 +316,11 @@ async function validateExecutionGroups(token) {
     
     return true;
   } catch (error) {
-    throw error;
+    // Add context to the error
+    if (error.message.includes('No se pudo')) {
+      throw error; // Already has context
+    }
+    throw new Error(`Error validando grupos de ejecución: ${error.message}`);
   }
 }
 
@@ -334,19 +355,25 @@ async function validateReviewersAndRoutes(payload, token) {
   // Check for emergency exception (feature/** → develop)
   if (targetBranch === 'develop' && sourceBranch.startsWith('feature/')) {
     if (!hasValidReviewer) {
-      // Check for emergency approval comment
+      // Check for emergency approval comment using @actions/github
       try {
-        const comments = execSync(
-          `gh pr view ${prNumber} --json comments -q '.comments[].body'`,
-          { encoding: 'utf8', env: { ...process.env, GH_TOKEN: token } }
+        const octokit = github.getOctokit(token);
+        const { data: comments } = await octokit.rest.issues.listComments({
+          owner: github.context.repo.owner,
+          repo: github.context.repo.repo,
+          issue_number: prNumber
+        });
+        
+        const hasEmergencyApproval = comments.some(comment => 
+          comment.body && comment.body.includes('@bot aprobar excepción')
         );
         
-        if (comments.includes('@bot aprobar excepción')) {
+        if (hasEmergencyApproval) {
           core.warning('⚠️  Excepción de emergencia detectada en comentarios');
           return true;
         }
       } catch (error) {
-        core.debug('No se pudieron verificar comentarios del PR');
+        core.debug(`No se pudieron verificar comentarios del PR: ${error.message}`);
       }
     }
   }
