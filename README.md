@@ -565,6 +565,35 @@ Para ver un ejemplo de cómo debe estructurarse el README.md de un servicio ESB/
 
 ---
 
+## 📋 Referencia Rápida
+
+### Para Usar la Acción en tu Repositorio
+
+Copia y pega en tu archivo `.github/workflows/checklist.yml`:
+
+```yaml
+name: checklist
+
+on:
+  pull_request:
+    branches: [main, develop, quality, 'feature/**']
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  validacion_readme_y_grupos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bocc-principal/ESB_ACE12_Validate_Readme_Action@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          config-repo-token: ${{ secrets.ESB_ACE12_ORG_REPO_TOKEN }}
+```
+
+**Nomenclatura oficial**: `bocc-principal/ESB_ACE12_Validate_Readme_Action@main`
+
+---
+
 **Última actualización**: Noviembre 2024  
 **Versión**: 1.0.0  
 **Mantenido por**: Equipo ESB/ACE12 - Banco de Occidente
