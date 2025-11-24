@@ -70,6 +70,7 @@ jobs:
 | `github-token` | Token de GitHub para acceso a la API | No | `${{ github.token }}` |
 | `config-repo-token` | Personal Access Token con acceso al repositorio `ESB_ACE12_General_Configs` | No | - |
 | `skip-readme-validation` | Omitir validación de README (útil para repositorios que no son servicios) | No | `false` |
+| `valid-reviewers` | Lista separada por comas de revisores autorizados | No | `DRamirezM,cdgomez,acardenasm,CAARIZA` |
 
 ### Configuración de Secrets
 

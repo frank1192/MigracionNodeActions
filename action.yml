@@ -20,6 +20,11 @@ inputs:
     description: 'Skip README validation (useful for non-service repositories)'
     required: false
     default: 'false'
+  
+  valid-reviewers:
+    description: 'Comma-separated list of valid reviewer usernames (defaults to: DRamirezM,cdgomez,acardenasm,CAARIZA)'
+    required: false
+    default: 'DRamirezM,cdgomez,acardenasm,CAARIZA'
 
 outputs:
   validation-passed:

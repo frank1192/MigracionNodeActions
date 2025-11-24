@@ -283,7 +283,7 @@ async function validateExecutionGroups(token) {
         ref: 'main'
       });
     } catch (error) {
-      throw new Error('No se pudo descargar el archivo de configuración central');
+      throw new Error(`No se pudo descargar el archivo de configuración central: ${error.message}`);
     }
     
     // Decode base64 content
@@ -332,7 +332,10 @@ async function validateReviewersAndRoutes(payload, token) {
   const targetBranch = payload.pull_request.base.ref;
   const prNumber = payload.pull_request.number;
   
-  const validReviewers = ['DRamirezM', 'cdgomez', 'acardenasm', 'CAARIZA'];
+  // Get valid reviewers from input or use defaults
+  const validReviewersInput = core.getInput('valid-reviewers') || 'DRamirezM,cdgomez,acardenasm,CAARIZA';
+  const validReviewers = validReviewersInput.split(',').map(r => r.trim());
+  
   const requestedReviewers = (payload.pull_request.requested_reviewers || []).map(r => r.login);
   
   // Check if any valid reviewer is assigned
