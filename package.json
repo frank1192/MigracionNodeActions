@@ -1,0 +1,25 @@
+{
+  "name": "esb-ace12-checklist-action",
+  "version": "1.0.0",
+  "description": "Reusable GitHub Action for validating ESB/ACE12 service repositories",
+  "main": "index.js",
+  "scripts": {
+    "build": "ncc build index.js -o dist",
+    "test": "node index.js"
+  },
+  "keywords": [
+    "github-actions",
+    "esb",
+    "ace12",
+    "validation"
+  ],
+  "author": "Banco de Occidente - ESB Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.1"
+  }
+}

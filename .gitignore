@@ -44,3 +44,12 @@ replay_pid*
 # === ⚠️ IMPORTANTE: No ignorar GitHub workflows ===
 !.github/
 !.github/workflows/
+
+# === Node.js ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# === ⚠️ IMPORTANTE: No ignorar dist/ (contiene el action compilado) ===
+!dist/
